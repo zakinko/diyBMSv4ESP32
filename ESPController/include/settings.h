@@ -26,6 +26,7 @@ void SaveConfiguration(const diybms_eeprom_settings *settings);
 void LoadConfiguration(diybms_eeprom_settings *settings);
 void ValidateConfiguration(diybms_eeprom_settings *settings);
 void DefaultConfiguration(diybms_eeprom_settings *settings);
+void ApplyChemistryPreset(diybms_eeprom_settings *settings, CellChemistry chemistry);
 
 void SaveWIFI(const wifi_eeprom_settings *wifi);
 bool LoadWIFI(wifi_eeprom_settings *wifi);

@@ -1996,6 +1996,7 @@ $(function () {
         $.getJSON("/api/chargeconfig",
             function (data) {
 
+                $("#chemistry").val(data.chargeconfig.chemistry);
                 $("#protocol").val(data.chargeconfig.protocol);
                 $("#canbusinverter").val(data.chargeconfig.canbusinverter);
                 $("#canbusbaud").val(data.chargeconfig.canbusbaud);

@@ -493,11 +493,29 @@ esp_err_t post_savechargeconfig_json_handler(httpd_req_t *req, bool urlEncoded)
 
     GetKeyValue(httpbuf, "canbusbaud", &mysettings.canbusbaud, urlEncoded);
 
+    // Picking a different chemistry replaces all of the cell voltages, so the ones posted
+    // alongside it are ignored - they still describe the chemistry being switched away from.
+    bool chemistrychanged = false;
+    if (GetKeyValue(httpbuf, "chemistry", &temp, urlEncoded))
+    {
+        auto requested = (CellChemistry)temp;
+
+        if (requested != mysettings.chemistry)
+        {
+            ApplyChemistryPreset(&mysettings, requested);
+            chemistrychanged = true;
+        }
+    }
+
     GetKeyValue(httpbuf, "nominalbatcap", &mysettings.nominalbatcap, urlEncoded);
-    GetKeyValue(httpbuf, "cellminmv", &mysettings.cellminmv, urlEncoded);
-    GetKeyValue(httpbuf, "cellmaxmv", &mysettings.cellmaxmv, urlEncoded);
-    GetKeyValue(httpbuf, "kneemv", &mysettings.kneemv, urlEncoded);
-    GetKeyValue(httpbuf, "cellmaxspikemv", &mysettings.cellmaxspikemv, urlEncoded);
+
+    if (!chemistrychanged)
+    {
+        GetKeyValue(httpbuf, "cellminmv", &mysettings.cellminmv, urlEncoded);
+        GetKeyValue(httpbuf, "cellmaxmv", &mysettings.cellmaxmv, urlEncoded);
+        GetKeyValue(httpbuf, "kneemv", &mysettings.kneemv, urlEncoded);
+        GetKeyValue(httpbuf, "cellmaxspikemv", &mysettings.cellmaxspikemv, urlEncoded);
+    }
 
     float temp_float;
 

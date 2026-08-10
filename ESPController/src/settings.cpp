@@ -40,6 +40,7 @@ static const char influxdb_databasebucket_JSONKEY[] = "bucket";
 static const char influxdb_orgid_JSONKEY[] = "org";
 static const char influxdb_serverurl_JSONKEY[] = "url";
 static const char influxdb_loggingFreqSeconds_JSONKEY[] = "logfreq";
+static const char chemistry_JSONKEY[] = "chemistry";
 static const char protocol_JSONKEY[] = "protocol";
 static const char canbusinverter_JSONKEY[] = "canbusinverter";
 static const char canbusbaud_JSONKEY[] = "canbusbaud";
@@ -128,6 +129,7 @@ static const char rs485baudrate_NVSKEY[] = "485baudrate";
 static const char rs485databits_NVSKEY[] = "485databits";
 static const char rs485parity_NVSKEY[] = "485parity";
 static const char rs485stopbits_NVSKEY[] = "485stopbits";
+static const char chemistry_NVSKEY[] = "chemistry";
 static const char protocol_NVSKEY[] = "protocol";
 static const char canbusinverter_NVSKEY[] = "canbusinverter";
 static const char canbusbaud_NVSKEY[] = "canbusbaud";
@@ -453,6 +455,7 @@ void SaveConfiguration(const diybms_eeprom_settings *settings)
         MACRO_NVSWRITE_UINT8(rs485databits)
         MACRO_NVSWRITE_UINT8(rs485parity)
         MACRO_NVSWRITE_UINT8(rs485stopbits)
+        MACRO_NVSWRITE_UINT8(chemistry)
         MACRO_NVSWRITE_UINT8(protocol)
         MACRO_NVSWRITE_UINT8(canbusinverter)
         MACRO_NVSWRITE(canbusbaud)
@@ -663,6 +666,21 @@ void LoadConfiguration(diybms_eeprom_settings *settings)
         MACRO_NVSREAD(soh_total_milliamphour_in)
         MACRO_NVSREAD(soh_lifetime_battery_cycles)
         MACRO_NVSREAD_UINT8(soh_eol_capacity)
+
+        // "chemistry" was added after this partition format was already in the field.  A
+        // controller that holds a configuration but has no chemistry key is an upgrade - its
+        // cell voltages were set by hand, so record that instead of claiming they match a
+        // preset, and so that it is not mistaken for a controller nobody has configured yet.
+        if (!getSetting(nvs_handle, chemistry_NVSKEY, (uint8_t *)&settings->chemistry))
+        {
+            uint8_t existingconfig;
+            if (nvs_get_u8(nvs_handle, totalNumberOfBanks_NVSKEY, &existingconfig) == ESP_OK)
+            {
+                ESP_LOGI(TAG, "No chemistry stored, keeping existing settings as CUSTOM");
+                settings->chemistry = CellChemistry::CHEMISTRY_CUSTOM;
+            }
+        }
+
         nvs_close(nvs_handle);
     }
 
@@ -693,6 +711,8 @@ void DefaultConfiguration(diybms_eeprom_settings *_myset)
     _myset->mqtt_enabled = false;
     _myset->mqtt_basic_cell_reporting = false;
 
+    // A brand new controller has not been told what it is connected to yet.
+    _myset->chemistry = CellChemistry::CHEMISTRY_NOTSET;
     _myset->protocol = ProtocolEmulation::EMULATION_DISABLED;
     _myset->canbusinverter = CanBusInverter::INVERTER_GENERIC;
 
@@ -921,6 +941,90 @@ bool LoadWIFI(wifi_eeprom_settings *wifi)
     ESP_LOGI(TAG, "IP=%u,GW=%u", x.wifi_ip, x.wifi_gateway);
 
     return result;
+}
+
+// Fill in the cell voltage settings for a chemistry.  Everything written here stays
+// individually editable afterwards - this only provides a sensible starting point.
+//
+// The ordering below has to hold for every preset:
+//   cellminmv < kneemv < BypassThresholdmV < cellmaxmv < cellmaxspikemv < over voltage rule
+// BypassThresholdmV sitting under cellmaxmv is what allows balancing to run while the pack
+// is still charging; ValidateConfiguration() enforces it.
+//
+// Note cellmaxmv is a charge target, not the cell's absolute maximum - LFP is charged to
+// 3.45V even though the cell is rated to 3.65V.
+void ApplyChemistryPreset(diybms_eeprom_settings *settings, CellChemistry chemistry)
+{
+    int16_t cellmin, cellmax, cellspike, knee;
+    uint16_t bypass, graphlow, graphhigh;
+    int32_t undervoltage, overvoltage;
+
+    switch (chemistry)
+    {
+    case CellChemistry::CHEMISTRY_LIFEPO4:
+        cellmin = 3050;
+        knee = 3320;
+        bypass = 3400;
+        cellmax = 3450;
+        cellspike = 3550;
+        undervoltage = 2500;
+        overvoltage = 3600;
+        graphlow = 2400;
+        graphhigh = 3800;
+        break;
+
+    case CellChemistry::CHEMISTRY_LIION:
+        cellmin = 3200;
+        knee = 3950;
+        bypass = 4050;
+        cellmax = 4100;
+        cellspike = 4150;
+        undervoltage = 3000;
+        overvoltage = 4200;
+        graphlow = 2900;
+        graphhigh = 4300;
+        break;
+
+    default:
+        // NOTSET and CUSTOM do not describe a particular cell, so there is nothing to apply.
+        settings->chemistry = chemistry;
+        return;
+    }
+
+    settings->chemistry = chemistry;
+
+    settings->cellminmv = cellmin;
+    settings->cellmaxmv = cellmax;
+    settings->cellmaxspikemv = cellspike;
+    settings->kneemv = knee;
+    settings->BypassThresholdmV = bypass;
+
+    settings->graph_voltagelow = graphlow;
+    settings->graph_voltagehigh = graphhigh;
+
+    // Bank and shunt limits are the per cell limits multiplied out over the string.  Pick the
+    // preset again after changing the number of series modules.
+    int32_t series = (settings->totalNumberOfSeriesModules > 0) ? settings->totalNumberOfSeriesModules : 1;
+
+    settings->rulevalue[Rule::ModuleOverVoltage] = overvoltage;
+    settings->rulevalue[Rule::ModuleUnderVoltage] = undervoltage;
+    settings->rulevalue[Rule::BankOverVoltage] = overvoltage * series;
+    settings->rulevalue[Rule::BankUnderVoltage] = undervoltage * series;
+    settings->rulevalue[Rule::CurrentMonitorOverVoltage] = overvoltage * series;
+    settings->rulevalue[Rule::CurrentMonitorUnderVoltage] = undervoltage * series;
+
+    // Same as DefaultConfiguration - hysteresis starts out matching the rule value.
+    const Rule voltagerules[] = {Rule::ModuleOverVoltage, Rule::ModuleUnderVoltage,
+                                 Rule::BankOverVoltage, Rule::BankUnderVoltage,
+                                 Rule::CurrentMonitorOverVoltage, Rule::CurrentMonitorUnderVoltage};
+
+    for (auto rule : voltagerules)
+    {
+        settings->rulehysteresis[rule] = settings->rulevalue[rule];
+    }
+
+    ESP_LOGI(TAG, "Chemistry %u preset: cell %i-%imV, bypass %umV", (uint8_t)chemistry,
+             settings->cellminmv, settings->cellmaxmv, settings->BypassThresholdmV);
 }
 
 // Validate configuration and force correction if needed.
@@ -1190,6 +1294,7 @@ void GenerateSettingsJSONDocument(JsonDocument &doc, diybms_eeprom_settings *set
     } // end for
 
     root[protocol_JSONKEY] = (uint8_t)settings->protocol;
+    root[chemistry_JSONKEY] = (uint8_t)settings->chemistry;
     root[canbusinverter_JSONKEY] = (uint8_t)settings->canbusinverter;
     root[canbusbaud_JSONKEY] = settings->canbusbaud;
     root[canbus_equipment_addr_JSONKEY] = settings->canbus_equipment_addr;
@@ -1299,6 +1404,7 @@ void JSONToSettings(JsonDocument &doc, diybms_eeprom_settings *settings)
     strncpy(settings->language, root[language_JSONKEY].as<String>().c_str(), sizeof(settings->language));
 
     settings->protocol = (ProtocolEmulation)root[protocol_JSONKEY];
+    settings->chemistry = (CellChemistry)root[chemistry_JSONKEY].as<uint8_t>();
     settings->canbusinverter = (CanBusInverter)root[canbusinverter_JSONKEY];
     settings->canbusbaud = root[canbusbaud_JSONKEY];
     settings->canbus_equipment_addr = root[canbus_equipment_addr_JSONKEY];

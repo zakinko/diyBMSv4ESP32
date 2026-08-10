@@ -599,6 +599,7 @@ esp_err_t content_handler_chargeconfig(httpd_req_t *req)
   JsonObject root = doc.to<JsonObject>();
   JsonObject settings = root["chargeconfig"].to<JsonObject>();
 
+  settings["chemistry"] = mysettings.chemistry;
   settings["protocol"] = mysettings.protocol;
   settings["canbusinverter"] = mysettings.canbusinverter;
   settings["canbusbaud"] = mysettings.canbusbaud;

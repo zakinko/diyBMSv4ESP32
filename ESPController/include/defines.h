@@ -112,6 +112,23 @@ enum CurrentMonitorDevice : uint8_t
   DIYBMS_CURRENT_MON_INTERNAL = 0x02
 };
 
+// Cell chemistry.  This is the only place the controller knows about chemistry - the cell
+// modules have no such concept, they just report a voltage.  Selecting one fills in the
+// cell voltage settings; every one of them stays individually editable afterwards.
+//
+// The voltage at which balancing should start cannot be derived from the charge target,
+// because how far below it the bypass has to sit depends on the shape of the OCV curve.
+// That is why chemistry is stored rather than calculated.
+enum CellChemistry : uint8_t
+{
+  // Never configured (a controller that has just been flashed).
+  CHEMISTRY_NOTSET = 0x00,
+  // Voltages set by hand, or carried over from a firmware without this setting.
+  CHEMISTRY_CUSTOM = 0x01,
+  CHEMISTRY_LIFEPO4 = 0x02,
+  CHEMISTRY_LIION = 0x03
+};
+
 // How far below "cellmaxmv" the bypass threshold is forced, if a configuration
 // is loaded where the threshold would never be reachable.
 #define BYPASS_THRESHOLD_MARGIN_MV 100
@@ -188,6 +205,7 @@ struct diybms_eeprom_settings
 
   char language[2 + 1];
 
+  CellChemistry chemistry;
   ProtocolEmulation protocol;
   CanBusInverter canbusinverter;
   //CANBUS baud rate, 250=250k, 500=500k

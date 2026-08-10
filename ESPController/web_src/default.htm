@@ -1005,6 +1005,18 @@
       <form id="chargingForm" method="POST" action="/post/savechargeconfig" autocomplete="off">
         <div class="settings">
           <div>
+            <label for="chemistry">Cell chemistry</label>
+            <select name="chemistry" id="chemistry">
+              <option value="0">Not set</option>
+              <option value="1">Custom</option>
+              <option value="2">LiFePO4</option>
+              <option value="3">Li-ion</option>
+            </select>
+          </div>
+          <p id="v9">Selecting a chemistry replaces the cell voltages below, so edits made at the
+            same time are discarded. They stay editable afterwards. Select it again after changing
+            the number of series modules, so the bank voltage rules are recalculated.</p>
+          <div>
             <label for="protocol">Protocol emulation</label>
             <select name="protocol" id="protocol">
               <option value="0">Disabled</option>
