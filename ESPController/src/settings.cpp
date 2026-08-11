@@ -972,6 +972,22 @@ void ValidateConfiguration(diybms_eeprom_settings *settings)
         settings->kneemv = defaults.kneemv;
     }
 
+    // A module enters bypass when its cell goes over BypassThresholdmV, and wherever charge
+    // control is in use the charge stops as soon as the highest cell exceeds cellmaxmv.  A
+    // threshold at or above cellmaxmv can therefore never be reached, and balancing silently
+    // never runs.  Nothing else cross-checks this value, so do it here.
+    if (settings->BypassThresholdmV >= settings->cellmaxmv)
+    {
+        ESP_LOGW(TAG, "BypassThresholdmV (%u) >= cellmaxmv (%i), balancing would never start",
+                 settings->BypassThresholdmV, settings->cellmaxmv);
+
+        // Restoring a corrupt or hand-edited backup could leave cellmaxmv too small to
+        // subtract from, and a threshold of zero would make the modules bypass permanently.
+        settings->BypassThresholdmV = (settings->cellmaxmv > BYPASS_THRESHOLD_MARGIN_MV)
+                                          ? (uint16_t)(settings->cellmaxmv - BYPASS_THRESHOLD_MARGIN_MV)
+                                          : defaults.BypassThresholdmV;
+    }
+
     // Limit to 1
     if (settings->sensitivity < 1 * 10)
     {

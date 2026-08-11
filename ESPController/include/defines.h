@@ -112,6 +112,10 @@ enum CurrentMonitorDevice : uint8_t
   DIYBMS_CURRENT_MON_INTERNAL = 0x02
 };
 
+// How far below "cellmaxmv" the bypass threshold is forced, if a configuration
+// is loaded where the threshold would never be reachable.
+#define BYPASS_THRESHOLD_MARGIN_MV 100
+
 // Number of rules as defined in Rules.h (enum Rule)
 // This value is 1 + MAXIMUM_RuleNumber
 #define RELAY_RULES 16
