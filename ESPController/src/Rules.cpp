@@ -437,6 +437,12 @@ bool Rules::SharedChargingDischargingRules(const diybms_eeprom_settings *mysetti
 }
 bool Rules::IsChargeAllowed(const diybms_eeprom_settings *mysettings)
 {
+    // Nobody has said what cells this is connected to yet, so there is no cell voltage limit
+    // worth enforcing - cellmaxmv and the rule thresholds are still whatever the defaults
+    // happen to be.  Refuse rather than charge to a limit that was not chosen for this pack.
+    if (mysettings->chemistry == CellChemistry::CHEMISTRY_NOTSET)
+        return false;
+
     if (SharedChargingDischargingRules(mysettings) == false)
         return false;
 
